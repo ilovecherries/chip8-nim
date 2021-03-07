@@ -1,4 +1,5 @@
 import sugar, algorithm, random
+import strutils
 
 # reference: http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
 
@@ -10,7 +11,7 @@ const
   StackSize = 0x16
   VariablesSize = 0x10
   KeyboardSize = 0x10
-  InstructionSize = 2 # bytes
+  InstructionSize = 4 # nibbles
 
 type
   Chip8Program = ref object
@@ -209,15 +210,25 @@ chip8Instruction(0xC, prg, ins):
 # # Dxyn - DRW Vx, Vy, nibble
 # # Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
 # chip8Instruction(0xD, prg, ins):
-#   var
+#   let
 #     x = prg.vars[ins shr 8 and 0xF]
 #     y = prg.vars[ins shr 4 and 0xF]
+#     n = ins and 0xF
+#   # iterate through all bytes
 #   for i in 0..n:
+#     let 
+#       vramPosition = (y + n) mod DisplayY
 
+proc getNibble(prg: Chip8Program, i: uint32): byte =
+  return prg.ram[(i div 2)] shr (4 * cast[int](i mod 2 == 0)) and 0xF
 
-proc getInstruction(prg: Chip8Program, index: uint32): uint16 =
-  return (cast[uint16](prg.ram[index+1]) shl 0) or 
-         (cast[uint16](prg.ram[index]) shl 8)
+proc getInstruction(prg: Chip8Program, i: uint32): uint16 =
+  if (i mod 2) == 1:
+    return (cast[uint16](prg.ram[(i div 2)+1]) shl 4) or 
+           (cast[uint16](prg.ram[(i div 2)+2]) shr 4) or 
+           (cast[uint16](prg.ram[i div 2]) shl 12)
+  else:
+    return (cast[uint16](prg.ram[(i div 2)+1]) shl 0) or (cast[uint16](prg.ram[i div 2]) shl 8)
 
 proc cycle(prg: Chip8Program): void =
   let pos = prg.stack[prg.stackPosition]
@@ -230,5 +241,10 @@ proc cycle(prg: Chip8Program): void =
 when isMainModule:
   var program = Chip8Program()
   program.ram[0] = 0x30
-  program.ram[1] = 0x01
-  program.cycle()
+  program.ram[1] = 0xA3
+  program.ram[2] = 0xB3
+  echo program.getInstruction(0).toHex()
+  echo program.getNibble(0).toHex()
+  echo program.getNibble(2).toHex()
+  echo program.getInstruction(1).toHex()
+  # program.cycle()
