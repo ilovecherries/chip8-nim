@@ -107,6 +107,36 @@ chip8Instruction(7, prg, ins):
 chip8Instruction(8, prg, ins):
   type VariableOperations = enum
     LD, OR, AND, XOR, ADD, SUB, SHR, SUBN, SHL
+  let
+    variableX = (ins and 0xF00) shr 8
+    variableY = (ins and 0xF0) shr 4
+    instruction = (ins and 0xF)
+  case VariableOperations(instruction):
+    # 8xy0 - LD Vx, Vy
+    # Set Vx = Vy.
+    # Stores the value of register Vy in register Vx.
+    of VariableOperations.LD:
+      prg.vars[variableX] = prg.vars[variableY]
+    # 8xy1 - OR Vx, Vy
+    # Set Vx = Vx OR Vy.
+    # Performs a bitwise OR on the values of Vx and Vy, then stores 
+    # the result in Vx.
+    of VariableOperations.OR:
+      prg.vars[variableX] = prg.vars[variableX] or prg.vars[variableY]
+    # 8xy2 - AND Vx, Vy
+    # Set Vx = Vx AND Vy.
+    # Performs a bitwise AND on the values of Vx and Vy, then stores 
+    # the result in Vx.
+    of VariableOperations.AND:
+      prg.vars[variableX] = prg.vars[variableX] and prg.vars[variableY]
+    # 8xy3 - XOR Vx, Vy
+    # Set Vx = Vx XOR Vy.
+    # Performs a bitwise exclusive OR on the values of Vx and Vy, then stores the result in Vx.
+    of VariableOperations.XOR:
+      prg.vars[variableX] = prg.vars[variableX] xor prg.vars[variableY]
+    else:
+      echo "Not yet implemented"
+
 
 proc getInstruction(prg: Chip8Program, index: uint32): uint16 =
   return (cast[uint16](prg.ram[index+1]) shl 0) or 
