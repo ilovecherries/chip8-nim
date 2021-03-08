@@ -6,12 +6,12 @@ import sdl2
 
 const
   Framerate = 60
-  MillisecondPerFrame = 1000 div Framerate
+  MillisecondPerFrame = 1000 / Framerate
   DisplayX = 64
   DisplayY = 32
   ResolutionMultiplier = 16
   VramSize = DisplayY
-  RamSize = (0xFFF - 0x200)
+  RamSize = 0xFFFF
   StackSize = 0x16
   VariablesSize = 0x10
   KeyboardSize = 0x10
@@ -43,7 +43,7 @@ type
     stack: array[StackSize, uint32]
     stackPosition: uint8
     vars: array[VariablesSize, uint8]
-    keyboard: array[KeyboardSize, uint8]
+    keyboard: array[KeyboardSize, bool]
     i: uint16
     endPoint: uint32
     # delay timer
@@ -60,7 +60,7 @@ template chip8Instruction(mask: SomeInteger, prg: untyped, ins: untyped, body: u
 proc getNibble(prg: Chip8Program, i: SomeInteger): byte =
   return prg.ram[(i div 2)] shr (4 * cast[int](i mod 2 == 0)) and 0xF
 
-proc getInstruction(prg: Chip8Program, i: uint32): uint16 =
+proc getInstruction(prg: Chip8Program, i: SomeInteger): uint16 =
     return (cast[uint16](prg.ram[i]) shl 8) or cast[uint16](prg.ram[i+1])
 
 chip8Instruction(0, prg, ins):
@@ -193,7 +193,7 @@ chip8Instruction(8, prg, ins):
     # Then Vx is divided by 2.
     of VariableOperations.SHR:
       prg.vars[0xF] = prg.vars[variableX] and 1
-      prg.vars[variableX] = (prg.vars[variableX] shr 1) div 2
+      prg.vars[variableX] = (prg.vars[variableX]) div 2
     # 8xy7 - SUBN Vx, Vy
     # Set Vx = Vy - Vx, set VF = NOT borrow.
     # If Vy > Vx, then VF is set to 1, otherwise 0. Then Vx is subtracted from 
@@ -207,7 +207,7 @@ chip8Instruction(8, prg, ins):
     # Then Vx is multiplied by 2.S
     of VariableOperations.SHL:
       prg.vars[0xF] = (prg.vars[variableX] shr 7) and 1
-      prg.vars[variableX] = (prg.vars[variableX] shl 1) * 2
+      prg.vars[variableX] = (prg.vars[variableX]) * 2
 
 # 9xy0 - SNE Vx, Vy
 # Skip next instruction if Vx != Vy.
@@ -254,10 +254,33 @@ chip8Instruction(0xD, prg, ins):
   for i in cast[uint64](0)..<n:
     let 
       vramPosition = (y + i) mod DisplayY
-      mask = cast[uint64](prg.getNibble(prg.i*InstructionSize + i*InstructionSize)) shl (60 - x)
+      mask = cast[uint64](prg.ram[prg.i + i]) shl (56 - x)
     # FIXME: THIS DOES NOT WRAP AROUND THE X AXIS, NEED TO FIX
     # THIS IS JUST A QUICK IMPLEMENTATION SO THAT WE CAN SEE RESULTS
     prg.vram[vramPosition] = prg.vram[vramPosition] xor mask
+  
+chip8Instruction(0xE, prg, ins):
+  type KeyboardInstructions = enum
+    Down = 0x9E, Up = 0xA1
+  let
+    variable = ins shr 8 and 0xF
+    instruction = ins and 0xFF
+  case KeyboardInstructions(instruction):
+    # Ex9E - SKP Vx
+    # Skip next instruction if key with the value of Vx is pressed.
+    # Checks the keyboard, and if the key corresponding to the value of Vx 
+    # is currently in the down position, PC is increased by 2.
+    of KeyboardInstructions.Down:
+      if prg.keyboard[prg.vars[variable]]:
+        prg.stack[prg.stackPosition] += InstructionSize
+    # ExA1 - SKNP Vx
+    # Skip next instruction if key with the value of Vx is not pressed.
+    # Checks the keyboard, and if the key corresponding to the value of 
+    # Vx is currently in the up position, PC is increased by 2.
+    of KeyboardInstructions.Up:
+      if not prg.keyboard[prg.vars[variable]]:
+        prg.stack[prg.stackPosition] += InstructionSize
+  return
 
 chip8Instruction(0xF, prg, ins):
   let
@@ -298,6 +321,29 @@ chip8Instruction(0xF, prg, ins):
     # hexadecimal sprite corresponding to the value of Vx.
     of 0x29:
       prg.i = prg.vars[variable] * DigitSpriteSize
+    # Fx33 - LD B, Vx
+    # Store BCD representation of Vx in memory locations I, I+1, and I+2.
+    # The interpreter takes the decimal value of Vx, and places the hundreds 
+    # digit in memory at location in I, the tens digit at location I+1, and 
+    # the ones digit at location I+2.
+    of 0x33:
+      prg.ram[prg.i] = (prg.vars[variable] div 100) mod 10
+      prg.ram[prg.i+1] = (prg.vars[variable] div 10) mod 10
+      prg.ram[prg.i+2] = prg.vars[variable] mod 10
+    # Fx55 - LD [I], Vx
+    # Store registers V0 through Vx in memory starting at location I.
+    # The interpreter copies the values of registers V0 through Vx into 
+    # memory, starting at the address in I.
+    of 0x55:
+      for i in cast[uint64](0)..variable:
+        prg.ram[prg.i + i] = prg.vars[i]
+    # Fx65 - LD Vx, [I]
+    # Read registers V0 through Vx from memory starting at location I.
+    # The interpreter reads values from memory starting at location I into 
+    # registers V0 through Vx.
+    of 0x65:
+      for i in cast[uint64](0)..variable:
+        prg.vars[i] = prg.ram[prg.i + i]
     else:
       return
   return
@@ -307,7 +353,6 @@ proc cycle(prg: Chip8Program): void =
   var 
     instructionMask = prg.getNibble(pos * InstructionSize)
     instruction = prg.getInstruction(pos)
-  # echo pos, ": ", instructionMask
   Chip8InstructionPointers[instructionMask](prg, instruction)
   prg.stack[prg.stackPosition] += InstructionSize
 
@@ -332,7 +377,7 @@ when isMainModule:
     # prepare interpreter
     var 
       program = Chip8Program()
-      s = newFileStream("chip8-test-rom/test_opcode.ch8", fmRead)
+      s = newFileStream("tetris.rom", fmRead)
       index = 0x200
     program.initializeDigits()
     while not s.atEnd:
@@ -348,14 +393,15 @@ when isMainModule:
     let window = createWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DisplayX*ResolutionMultiplier, DisplayY*ResolutionMultiplier, SDL_WINDOW_SHOWN)
     defer: window.destroy()
 
-    let renderer = createRenderer(window, -1, Renderer_Accelerated or Renderer_PresentVsync or Renderer_TargetTexture)
+    let renderer = createRenderer(window, -1, Renderer_Accelerated or Renderer_TargetTexture)
     defer: renderer.destroy()
     var running = true
 
     var lastTime: uint32 = 0
+    program.dt = 60
 
     while running and program.stack[program.stackPosition] < program.endPoint:
-      while (lastTime - sdl2.getTicks() < MillisecondPerFrame):
+      while (lastTime - sdl2.getTicks() < cast[uint32](MillisecondPerFrame)):
         program.cycle()
         sdl2.delay(1)
       var event = defaultEvent
@@ -365,6 +411,8 @@ when isMainModule:
             running = false
           else:
             discard
+      program.dt -= 1
+      if program.dt == 255: program.dt = 60
       program.drawToRenderer(renderer)
       lastTime = sdl2.getTicks()
   
