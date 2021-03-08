@@ -7,12 +7,32 @@ import sdl2
 const
   DisplayX = 64
   DisplayY = 32
+  ResolutionMultiplier = 16
   VramSize = DisplayY
   RamSize = (0xFFF - 0x200)
   StackSize = 0x16
   VariablesSize = 0x10
   KeyboardSize = 0x10
-  InstructionSize = 4 # nibbles
+  InstructionSize = 2 # bytes
+  DigitSpriteSize = 5
+  DigitSpriteData = [ 
+    0xF0, 0x90, 0x90, 0x90, 0xF0, # 0
+    0x20, 0x60, 0x20, 0x20, 0x70, # 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, # 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, # 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, # 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, # 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, # 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, # 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, # 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, # 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, # A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, # B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, # C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, # D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, # E
+    0xF0, 0x80, 0xF0, 0x80, 0x80  # F 
+  ]
 
 type
   Chip8Program = ref object
@@ -24,6 +44,10 @@ type
     keyboard: array[KeyboardSize, uint8]
     i: uint16
     endPoint: uint32
+    # delay timer
+    dt: uint8
+    # sound timer
+    st: uint8
 
 var Chip8InstructionPointers: array[0x10, ((Chip8Program, var uint16) -> void)]
 
@@ -35,12 +59,7 @@ proc getNibble(prg: Chip8Program, i: SomeInteger): byte =
   return prg.ram[(i div 2)] shr (4 * cast[int](i mod 2 == 0)) and 0xF
 
 proc getInstruction(prg: Chip8Program, i: uint32): uint16 =
-  if (i mod 2) == 1:
-    return (cast[uint16](prg.ram[(i div 2)+1]) shl 4) or 
-           (cast[uint16](prg.ram[(i div 2)+2]) shr 4) or 
-           (cast[uint16](prg.ram[i div 2]) shl 12)
-  else:
-    return (cast[uint16](prg.ram[(i div 2)+1]) shl 0) or (cast[uint16](prg.ram[i div 2]) shl 8)
+    return (cast[uint16](prg.ram[i]) shl 8) or cast[uint16](prg.ram[i+1])
 
 chip8Instruction(0, prg, ins):
   case cast[byte](ins and 0xFF):
@@ -123,7 +142,7 @@ chip8Instruction(7, prg, ins):
 
 chip8Instruction(8, prg, ins):
   type VariableOperations = enum
-    LD, OR, AND, XOR, ADD, SUB, SHR, SUBN, SHL
+    LD, OR, AND, XOR, ADD, SUB, SHR, SUBN, SHL = 14
   let
     variableX = ins shr 8 and 0xF
     variableY = ins shr 4 and 0xF
@@ -229,35 +248,82 @@ chip8Instruction(0xD, prg, ins):
     x = prg.vars[ins shr 8 and 0xF]
     y = prg.vars[ins shr 4 and 0xF]
     n = ins and 0xF
-  echo "..."
   # iterate through all bytes
   for i in cast[uint64](0)..<n:
     let 
       vramPosition = (y + i) mod DisplayY
-      mask = cast[uint64](prg.getNibble(prg.i + i)) shl (60 - x)
+      mask = cast[uint64](prg.getNibble(prg.i*InstructionSize + i*InstructionSize)) shl (60 - x)
     # FIXME: THIS DOES NOT WRAP AROUND THE X AXIS, NEED TO FIX
     # THIS IS JUST A QUICK IMPLEMENTATION SO THAT WE CAN SEE RESULTS
     prg.vram[vramPosition] = prg.vram[vramPosition] xor mask
 
+chip8Instruction(0xF, prg, ins):
+  let
+    variable = ins shr 8 and 0xF
+    instruction = ins and 0xFF
+  case instruction:
+    # Fx07 - LD Vx, DT
+    # Set Vx = delay timer value.
+    # The value of DT is placed into Vx.
+    of 0x07:
+      prg.vars[variable] = prg.dt
+    # Fx0A - LD Vx, K
+    # Wait for a key press, store the value of the key in Vx.
+    # All execution stops until a key is pressed, then the 
+    # value of that key is stored in Vx.
+    of 0x0A:
+      # TODO: NEED TO IMPLEMENT KEYBOARD, THIS IS PLACEHOLDER UNTIL THEN
+      prg.vars[variable] = 0
+    # Fx15 - LD DT, Vx
+    # Set delay timer = Vx.
+    # DT is set equal to the value of Vx.
+    of 0x15:
+      prg.dt = prg.vars[variable]
+    # Fx18 - LD ST, Vx
+    # Set sound timer = Vx.
+    # ST is set equal to the value of Vx.
+    of 0x18:
+      prg.st = prg.vars[variable]
+    # Fx1E - ADD I, Vx
+    # Set I = I + Vx.
+    # The values of I and Vx are added, and the 
+    # results are stored in I.
+    of 0x1E:
+      prg.i += prg.vars[variable]
+    # Fx29 - LD F, Vx
+    # Set I = location of sprite for digit Vx.
+    # The value of I is set to the location for the 
+    # hexadecimal sprite corresponding to the value of Vx.
+    of 0x29:
+      prg.i = prg.vars[variable] * DigitSpriteSize
+    else:
+      return
+  return
+
 proc cycle(prg: Chip8Program): void =
   let pos = prg.stack[prg.stackPosition]
   var 
-    instructionMask = prg.getNibble(pos)
+    instructionMask = prg.getNibble(pos * InstructionSize)
     instruction = prg.getInstruction(pos)
-  assert instructionMask != 0xD
+  # echo pos, ": ", instructionMask
   Chip8InstructionPointers[instructionMask](prg, instruction)
   prg.stack[prg.stackPosition] += InstructionSize
 
 proc drawToRenderer(prg: Chip8Program, renderer: RendererPtr): void =
   renderer.setDrawColor 0, 0, 0, 255
   renderer.clear()
+  renderer.setDrawColor 255, 255, 255, 255
   for i in countup(0, DisplayY - 1):
     for j in countdown(DisplayX - 1, 0):
-      var r = rect(DisplayX - 1 - cint(j), cint(i), cint(1), cint(1))
+      var r = rect(ResolutionMultiplier*(DisplayX - 1 - cint(j)), cint(i*ResolutionMultiplier), cint(1*ResolutionMultiplier), cint(1*ResolutionMultiplier))
       if (prg.vram[i] shr j and 1) != 0:
         renderer.fillRect(r)
-  renderer.setDrawColor 255, 255, 255, 255
   renderer.present()
+
+proc initializeDigits(prg: Chip8Program): void =
+  for i in DigitSpriteData.low..<DigitSpriteData.high:
+    prg.ram[i] = cast[uint8](DigitSpriteData[i])
+  return
 
 when isMainModule:
   proc main(): void =
@@ -266,17 +332,18 @@ when isMainModule:
       program = Chip8Program()
       s = newFileStream("chip8-test-rom/test_opcode.ch8", fmRead)
       index = 0x200
+    program.initializeDigits()
     while not s.atEnd:
       program.ram[index] = s.readChar.byte
       inc index
     program.stack[0] = 0x200
-    program.endPoint = cast[uint32](index div 2)
+    program.endPoint = cast[uint32](index)
 
     # initialize sdl things
     discard sdl2.init(INIT_EVERYTHING)
     defer: sdl2.quit()
 
-    let window = createWindow("Pong", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DisplayX, DisplayY, SDL_WINDOW_SHOWN)
+    let window = createWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DisplayX*ResolutionMultiplier, DisplayY*ResolutionMultiplier, SDL_WINDOW_SHOWN)
     defer: window.destroy()
 
     let renderer = createRenderer(window, -1, Renderer_Accelerated or Renderer_PresentVsync or Renderer_TargetTexture)
