@@ -1,5 +1,6 @@
 import sugar, algorithm, random
 import streams
+import sdl2
 
 # reference: http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
 
@@ -7,7 +8,7 @@ const
   DisplayX = 64
   DisplayY = 32
   VramSize = DisplayY
-  RamSize = (0xFFF - 0x200) div 2
+  RamSize = (0xFFF - 0x200)
   StackSize = 0x16
   VariablesSize = 0x10
   KeyboardSize = 0x10
@@ -42,19 +43,21 @@ proc getInstruction(prg: Chip8Program, i: uint32): uint16 =
     return (cast[uint16](prg.ram[(i div 2)+1]) shl 0) or (cast[uint16](prg.ram[i div 2]) shl 8)
 
 chip8Instruction(0, prg, ins):
-  type SystemCalls = enum
-    CLS = 0x00E0, RET = 0x00EE
-  case SystemCalls(ins and 0xFF):
+  case cast[byte](ins and 0xFF):
     # 00E0 - CLS
     # Clear the display.
-    of SystemCalls.CLS: 
+    of 0x00E0: 
       prg.vram.fill(0)
     # 00EE - RET
     # Return from a subroutine.
     # The interpreter sets the program counter to the address at the top of the stack, then subtracts 1 from the stack pointer.
-    of SystemCalls.RET:
+    of 0x00EE:
       dec prg.stackPosition
       assert prg.stackPosition >= 0, "The stack position has been decreased too many times!"
+    # 0nnn - SYS addr
+    # IGNORE THIS
+    else:
+      return
 
 # 1nnn - JP addr
 # Jump to location nnn.
@@ -75,7 +78,7 @@ chip8Instruction(2, prg, ins):
 # The interpreter compares register Vx to kk, and if they are equal, increments the program counter by 2.
 chip8Instruction(3, prg, ins):
   let
-    variable = (ins and 0xF00) shr 8
+    variable = ins shr 8 and 0xF
     value = ins and 0xFF
   if prg.vars[variable] == value:
     prg.stack[prg.stackPosition] += InstructionSize
@@ -85,7 +88,7 @@ chip8Instruction(3, prg, ins):
 # The interpreter compares register Vx to kk, and if they are not equal, increments the program counter by 2.
 chip8Instruction(4, prg, ins):
   let
-    variable = prg.vars[ins shr 8 and 0xF00]
+    variable = prg.vars[ins shr 8 and 0xF]
     value = ins and 0xFF
   if variable != value:
     prg.stack[prg.stackPosition] += InstructionSize
@@ -226,6 +229,7 @@ chip8Instruction(0xD, prg, ins):
     x = prg.vars[ins shr 8 and 0xF]
     y = prg.vars[ins shr 4 and 0xF]
     n = ins and 0xF
+  echo "..."
   # iterate through all bytes
   for i in cast[uint64](0)..<n:
     let 
@@ -238,22 +242,66 @@ chip8Instruction(0xD, prg, ins):
 proc cycle(prg: Chip8Program): void =
   let pos = prg.stack[prg.stackPosition]
   var 
-    instructionMask = prg.ram[pos] shr 4
+    instructionMask = prg.getNibble(pos)
     instruction = prg.getInstruction(pos)
   Chip8InstructionPointers[instructionMask](prg, instruction)
   prg.stack[prg.stackPosition] += InstructionSize
 
+proc drawToRenderer(prg: Chip8Program, renderer: RendererPtr): void =
+  renderer.setDrawColor 0, 0, 0, 255
+  renderer.clear()
+  for i in countup(0, DisplayY - 1):
+    for j in countdown(DisplayX - 1, 0):
+      var r = rect(DisplayX - 1 - cint(j), cint(i), cint(1), cint(1))
+      if (prg.vram[i] shr j and 1) != 0:
+        renderer.fillRect(r)
+  renderer.setDrawColor 255, 255, 255, 255
+  renderer.present()
+
 when isMainModule:
-  var program = Chip8Program()
-  program.ram[0] = 0x30
-  program.ram[1] = 0xA3
-  program.ram[2] = 0xB3
-  var 
-    s = newFileStream("chip8-test-rom/test_opcode.ch8", fmRead)
-    index = 0
-  while not s.atEnd:
-    program.ram[index] = s.readChar.byte
-    inc index
-  program.endPoint = cast[uint32](index)
+  proc main(): void =
+    # prepare interpreter
+    var 
+      program = Chip8Program()
+      s = newFileStream("BC_test.ch8", fmRead)
+      index = 0
+    while not s.atEnd:
+      program.ram[index] = s.readChar.byte
+      inc index
+    program.endPoint = cast[uint32](index div 2)
+
+    # initialize sdl things
+    discard sdl2.init(INIT_EVERYTHING)
+    defer: sdl2.quit()
+
+    let window = createWindow("Pong", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, DisplayX, DisplayY, SDL_WINDOW_SHOWN)
+    defer: window.destroy()
+
+    let renderer = createRenderer(window, -1, Renderer_Accelerated or Renderer_PresentVsync or Renderer_TargetTexture)
+    defer: renderer.destroy()
+    var running = true
+
+    while program.stack[program.stackPosition] < program.endPoint:
+      program.cycle()
+
+    # while running and program.stack[program.stackPosition] < program.endPoint:
+    #   var event = defaultEvent
+    #   while pollEvent(event):
+    #     case event.kind:
+    #       of QuitEvent:
+    #         running = false
+    #       else:
+    #         discard
+    #   program.cycle()
+    #   program.drawToRenderer(renderer)
+    
+    # while running:
+    #   var event = defaultEvent
+    #   while pollEvent(event):
+    #     case event.kind:
+    #       of QuitEvent:
+    #         running = false
+    #       else:
+    #         discard
   
-  program.cycle()
+  main()
