@@ -244,6 +244,7 @@ proc cycle(prg: Chip8Program): void =
   var 
     instructionMask = prg.getNibble(pos)
     instruction = prg.getInstruction(pos)
+  assert instructionMask != 0xD
   Chip8InstructionPointers[instructionMask](prg, instruction)
   prg.stack[prg.stackPosition] += InstructionSize
 
@@ -263,11 +264,12 @@ when isMainModule:
     # prepare interpreter
     var 
       program = Chip8Program()
-      s = newFileStream("BC_test.ch8", fmRead)
-      index = 0
+      s = newFileStream("chip8-test-rom/test_opcode.ch8", fmRead)
+      index = 0x200
     while not s.atEnd:
       program.ram[index] = s.readChar.byte
       inc index
+    program.stack[0] = 0x200
     program.endPoint = cast[uint32](index div 2)
 
     # initialize sdl things
@@ -281,27 +283,27 @@ when isMainModule:
     defer: renderer.destroy()
     var running = true
 
-    while program.stack[program.stackPosition] < program.endPoint:
-      program.cycle()
-
-    # while running and program.stack[program.stackPosition] < program.endPoint:
-    #   var event = defaultEvent
-    #   while pollEvent(event):
-    #     case event.kind:
-    #       of QuitEvent:
-    #         running = false
-    #       else:
-    #         discard
+    # while program.stack[program.stackPosition] < program.endPoint:
     #   program.cycle()
-    #   program.drawToRenderer(renderer)
+
+    while running and program.stack[program.stackPosition] < program.endPoint:
+      var event = defaultEvent
+      while pollEvent(event):
+        case event.kind:
+          of QuitEvent:
+            running = false
+          else:
+            discard
+      program.cycle()
+      program.drawToRenderer(renderer)
     
-    # while running:
-    #   var event = defaultEvent
-    #   while pollEvent(event):
-    #     case event.kind:
-    #       of QuitEvent:
-    #         running = false
-    #       else:
-    #         discard
+    while running:
+      var event = defaultEvent
+      while pollEvent(event):
+        case event.kind:
+          of QuitEvent:
+            running = false
+          else:
+            discard
   
   main()
