@@ -11,3 +11,4 @@ bin           = @["chip8"]
 # Dependencies
 
 requires "nim >= 1.4.2"
+requires "sdl2"
