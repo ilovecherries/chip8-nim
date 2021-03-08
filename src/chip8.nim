@@ -1,5 +1,5 @@
 import sugar, algorithm, random
-import strutils
+import streams
 
 # reference: http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
 
@@ -22,12 +22,24 @@ type
     vars: array[VariablesSize, uint8]
     keyboard: array[KeyboardSize, uint8]
     i: uint16
+    endPoint: uint32
 
 var Chip8InstructionPointers: array[0x10, ((Chip8Program, var uint16) -> void)]
 
 template chip8Instruction(mask: SomeInteger, prg: untyped, ins: untyped, body: untyped) =
   Chip8InstructionPointers[mask] = proc (prg: Chip8Program, ins: var uint16): void =
     body
+
+proc getNibble(prg: Chip8Program, i: SomeInteger): byte =
+  return prg.ram[(i div 2)] shr (4 * cast[int](i mod 2 == 0)) and 0xF
+
+proc getInstruction(prg: Chip8Program, i: uint32): uint16 =
+  if (i mod 2) == 1:
+    return (cast[uint16](prg.ram[(i div 2)+1]) shl 4) or 
+           (cast[uint16](prg.ram[(i div 2)+2]) shr 4) or 
+           (cast[uint16](prg.ram[i div 2]) shl 12)
+  else:
+    return (cast[uint16](prg.ram[(i div 2)+1]) shl 0) or (cast[uint16](prg.ram[i div 2]) shl 8)
 
 chip8Instruction(0, prg, ins):
   type SystemCalls = enum
@@ -66,7 +78,7 @@ chip8Instruction(3, prg, ins):
     variable = (ins and 0xF00) shr 8
     value = ins and 0xFF
   if prg.vars[variable] == value:
-    inc prg.stack[prg.stackPosition]
+    prg.stack[prg.stackPosition] += InstructionSize
 
 # 4xkk - SNE Vx, byte
 # Skip next instruction if Vx != kk.
@@ -76,7 +88,7 @@ chip8Instruction(4, prg, ins):
     variable = prg.vars[ins shr 8 and 0xF00]
     value = ins and 0xFF
   if variable != value:
-    inc prg.stack[prg.stackPosition]
+    prg.stack[prg.stackPosition] += InstructionSize
 
 # 5xy0 - SE Vx, Vy
 # Skip next instruction if Vx = Vy.
@@ -86,7 +98,7 @@ chip8Instruction(5, prg, ins):
     variableX = prg.vars[ins shr 8 and 0xF]
     variableY = prg.vars[ins shr 4 and 0xF]
   if variableX == variableY:
-    inc prg.stack[prg.stackPosition]
+    prg.stack[prg.stackPosition] += InstructionSize
 
 # 6xkk - LD Vx, byte
 # Set Vx = kk.
@@ -207,28 +219,21 @@ chip8Instruction(0xC, prg, ins):
     randomNumber: uint8 = cast[uint8](rand(256))
   prg.vars[variable] = value and randomNumber
 
-# # Dxyn - DRW Vx, Vy, nibble
-# # Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
-# chip8Instruction(0xD, prg, ins):
-#   let
-#     x = prg.vars[ins shr 8 and 0xF]
-#     y = prg.vars[ins shr 4 and 0xF]
-#     n = ins and 0xF
-#   # iterate through all bytes
-#   for i in 0..n:
-#     let 
-#       vramPosition = (y + n) mod DisplayY
-
-proc getNibble(prg: Chip8Program, i: uint32): byte =
-  return prg.ram[(i div 2)] shr (4 * cast[int](i mod 2 == 0)) and 0xF
-
-proc getInstruction(prg: Chip8Program, i: uint32): uint16 =
-  if (i mod 2) == 1:
-    return (cast[uint16](prg.ram[(i div 2)+1]) shl 4) or 
-           (cast[uint16](prg.ram[(i div 2)+2]) shr 4) or 
-           (cast[uint16](prg.ram[i div 2]) shl 12)
-  else:
-    return (cast[uint16](prg.ram[(i div 2)+1]) shl 0) or (cast[uint16](prg.ram[i div 2]) shl 8)
+# Dxyn - DRW Vx, Vy, nibble
+# Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
+chip8Instruction(0xD, prg, ins):
+  let
+    x = prg.vars[ins shr 8 and 0xF]
+    y = prg.vars[ins shr 4 and 0xF]
+    n = ins and 0xF
+  # iterate through all bytes
+  for i in cast[uint64](0)..<n:
+    let 
+      vramPosition = (y + i) mod DisplayY
+      mask = cast[uint64](prg.getNibble(prg.i + i)) shl (60 - x)
+    # FIXME: THIS DOES NOT WRAP AROUND THE X AXIS, NEED TO FIX
+    # THIS IS JUST A QUICK IMPLEMENTATION SO THAT WE CAN SEE RESULTS
+    prg.vram[vramPosition] = prg.vram[vramPosition] xor mask
 
 proc cycle(prg: Chip8Program): void =
   let pos = prg.stack[prg.stackPosition]
@@ -243,8 +248,12 @@ when isMainModule:
   program.ram[0] = 0x30
   program.ram[1] = 0xA3
   program.ram[2] = 0xB3
-  echo program.getInstruction(0).toHex()
-  echo program.getNibble(0).toHex()
-  echo program.getNibble(2).toHex()
-  echo program.getInstruction(1).toHex()
-  # program.cycle()
+  var 
+    s = newFileStream("chip8-test-rom/test_opcode.ch8", fmRead)
+    index = 0
+  while not s.atEnd:
+    program.ram[index] = s.readChar.byte
+    inc index
+  program.endPoint = cast[uint32](index)
+  
+  program.cycle()
