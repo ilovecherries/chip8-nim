@@ -5,6 +5,8 @@ import sdl2
 # reference: http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
 
 const
+  Framerate = 60
+  MillisecondPerFrame = 1000 div Framerate
   DisplayX = 64
   DisplayY = 32
   ResolutionMultiplier = 16
@@ -350,10 +352,12 @@ when isMainModule:
     defer: renderer.destroy()
     var running = true
 
-    # while program.stack[program.stackPosition] < program.endPoint:
-    #   program.cycle()
+    var lastTime: uint32 = 0
 
     while running and program.stack[program.stackPosition] < program.endPoint:
+      while (lastTime - sdl2.getTicks() < MillisecondPerFrame):
+        program.cycle()
+        sdl2.delay(1)
       var event = defaultEvent
       while pollEvent(event):
         case event.kind:
@@ -361,16 +365,7 @@ when isMainModule:
             running = false
           else:
             discard
-      program.cycle()
       program.drawToRenderer(renderer)
-    
-    while running:
-      var event = defaultEvent
-      while pollEvent(event):
-        case event.kind:
-          of QuitEvent:
-            running = false
-          else:
-            discard
+      lastTime = sdl2.getTicks()
   
   main()
