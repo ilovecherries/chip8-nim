@@ -35,6 +35,12 @@ const
     0xF0, 0x80, 0xF0, 0x80, 0xF0, # E
     0xF0, 0x80, 0xF0, 0x80, 0x80  # F 
   ]
+  KeyboardCodes = [
+    SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
+    SDL_SCANCODE_Q, SDL_SCANCODE_W, SDL_SCANCODE_E, SDL_SCANCODE_R,
+    SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D, SDL_SCANCODE_F,
+    SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_V
+  ]
 
 type
   Chip8Program = ref object
@@ -250,14 +256,21 @@ chip8Instruction(0xD, prg, ins):
     x = prg.vars[ins shr 8 and 0xF]
     y = prg.vars[ins shr 4 and 0xF]
     n = ins and 0xF
+  prg.vars[0xF] = 0
   # iterate through all bytes
   for i in cast[uint64](0)..<n:
-    let 
-      vramPosition = (y + i) mod DisplayY
-      mask = cast[uint64](prg.ram[prg.i + i]) shl (56 - x)
-    # FIXME: THIS DOES NOT WRAP AROUND THE X AXIS, NEED TO FIX
-    # THIS IS JUST A QUICK IMPLEMENTATION SO THAT WE CAN SEE RESULTS
-    prg.vram[vramPosition] = prg.vram[vramPosition] xor mask
+    let vramPosition = (y + i) mod DisplayY
+    for j in countdown(7, 0) :
+      let 
+        bit = (prg.ram[prg.i + i] shr j) and 1
+        distance = (56 - x + cast[uint8](j)) mod 64
+      let
+        collision = (prg.vram[vramPosition] shr distance and 1) and bit
+        mask = cast[uint64](bit) shl distance
+      prg.vars[0xF] = prg.vars[0xF] or cast[uint8](collision)
+      # FIXME: THIS DOES NOT WRAP AROUND THE X AXIS, NEED TO FIX
+      # THIS IS JUST A QUICK IMPLEMENTATION SO THAT WE CAN SEE RESULTS
+      prg.vram[vramPosition] = prg.vram[vramPosition] xor mask
   
 chip8Instruction(0xE, prg, ins):
   type KeyboardInstructions = enum
@@ -280,7 +293,6 @@ chip8Instruction(0xE, prg, ins):
     of KeyboardInstructions.Up:
       if not prg.keyboard[prg.vars[variable]]:
         prg.stack[prg.stackPosition] += InstructionSize
-  return
 
 chip8Instruction(0xF, prg, ins):
   let
@@ -377,7 +389,7 @@ when isMainModule:
     # prepare interpreter
     var 
       program = Chip8Program()
-      s = newFileStream("tetris.rom", fmRead)
+      s = newFileStream("chip8-test-rom/test_opcode.ch8", fmRead)
       index = 0x200
     program.initializeDigits()
     while not s.atEnd:
@@ -409,6 +421,14 @@ when isMainModule:
         case event.kind:
           of QuitEvent:
             running = false
+          of KeyDown:
+            let code = KeyboardCodes.find(event.key.keysym.scancode)
+            if code != -1:
+              program.keyboard[code] = true
+          of KeyUp:
+            let code = KeyboardCodes.find(event.key.keysym.scancode)
+            if code != -1:
+              program.keyboard[code] = false
           else:
             discard
       program.dt -= 1
