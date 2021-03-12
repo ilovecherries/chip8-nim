@@ -6,6 +6,15 @@ it depends on having sdl2, so have that installed i guess
 
 to build, use:
 
-#+begin_src nim
+#+begin_src sh
   nimble build -d:release
 #+end_src
+
+to run, use:
+
+#+begin_src sh
+  chip8 (FILENAME)
+#+end_src
+
+if there is no filename, then it will attempt to run the default test rom
+included in the submodule
