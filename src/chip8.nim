@@ -49,12 +49,19 @@ proc drawToRenderer(prg: Chip8, renderer: RendererPtr): void =
 
 when isMainModule:
   when defined(js):
+    var program: Chip8
     proc chip8load(): void {.exportc.} =
-      discard
+      program = newChip8()
+      var
+        index = 0x200
+        data = decode(TestRom)
+      for i in countup(0, data.len-1):
+        program.ram[index + i] = cast[byte](data[i])
+        program.endPoint = cast[uint32](index + i)
     proc chip8cycle(): void {.exportc.} =
-      discard
-    proc chip8getvram(): void {.exportc.} =
-      discard
+      program.cycle()
+    proc chip8getvram(): array[DisplayY, array[DisplayX, uint8]] {.exportc.} =
+      return program.vram
   else:
     proc main(): void =
       # prepare interpreter
@@ -94,7 +101,7 @@ when isMainModule:
       var
         running = true
         lastTime: uint32 = 0
-        program.dt = 60
+      program.dt = 60
         
       while running and program.stack[program.stackPosition] < program.endPoint:
         while (lastTime - sdl2.getTicks() < cast[uint32](MillisecondPerFrame)):
@@ -113,11 +120,11 @@ when isMainModule:
               let code = KeyboardCodes.find(event.key.keysym.scancode)
               if code != -1:
                 program.keyboard[code] = false
-              else:
-                discard
-          program.dt -= 1
-          if program.dt == 255: program.dt = 60
-          program.drawToRenderer(renderer)
-          lastTime = sdl2.getTicks()
+            else:
+              discard
+        program.dt -= 1
+        if program.dt == 255: program.dt = 60
+        program.drawToRenderer(renderer)
+        lastTime = sdl2.getTicks()
             
     main()
