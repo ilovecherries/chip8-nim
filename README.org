@@ -1,0 +1,11 @@
+#+TITLE: CHIP-8 Interpreter
+
+this is my first time using nim so i dont expect it to be amazing
+
+it depends on having sdl2, so have that installed i guess
+
+to build, use:
+
+#+begin_src nim
+  nimble build -d:release
+#+end_src
