@@ -50,9 +50,9 @@ proc initializeDigits(prg: Chip8): void =
   return
 
 proc newChip8*(): Chip8 =
-  var result = Chip8()
-  result.initializeDigits()
-  return result
+  var chip8 = Chip8()
+  chip8.initializeDigits()
+  return chip8
 
 var Chip8InstructionPointers: array[0x10, ((Chip8, var uint16) -> void)]
 
