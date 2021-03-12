@@ -3,7 +3,6 @@ import algorithm, sugar, random
 const
   DisplayX* = 64
   DisplayY* = 32
-  VramSize = DisplayY
   RamSize = 0xFFFF
   StackSize = 0x16
   VariablesSize = 0x10
@@ -31,7 +30,7 @@ const
 
 type
   Chip8* = ref object
-    vram*: array[VramSize, uint64]
+    vram*: array[DisplayY, array[DisplayX, uint8]]
     ram*: array[RamSize, byte]
     stack*: array[StackSize, uint32]
     stackPosition*: uint8
@@ -73,7 +72,8 @@ chip8Instruction(0, prg, ins):
     # 00E0 - CLS
     # Clear the display.
     of 0x00E0: 
-      prg.vram.fill(0)
+      for i in countup(0, prg.vram.len - 1):
+        prg.vram[i].fill(0)
     # 00EE - RET
     # Return from a subroutine.
     # The interpreter sets the program counter to the address at the top of
@@ -267,18 +267,16 @@ chip8Instruction(0xD, prg, ins):
   prg.vars[0xF] = 0
   # iterate through all bytes
   for i in cast[uint64](0)..<n:
-    let vramPosition = (y + i) mod DisplayY
+    let vramPositionY = (y + i) mod DisplayY
     for j in countdown(7, 0) :
       let 
         bit = (prg.ram[prg.i + i] shr j) and 1
-        distance = (56 - x + cast[uint8](j)) mod 64
+        vramPositionX = (56 - x + cast[uint8](j)) mod DisplayX
       let
-        collision = (prg.vram[vramPosition] shr distance and 1) and bit
-        mask = cast[uint64](bit) shl distance
+        collision = (prg.vram[vramPositionY][vramPositionX] and 1) and bit
       prg.vars[0xF] = prg.vars[0xF] or cast[uint8](collision)
-      # FIXME: THIS DOES NOT WRAP AROUND THE X AXIS, NEED TO FIX
-      # THIS IS JUST A QUICK IMPLEMENTATION SO THAT WE CAN SEE RESULTS
-      prg.vram[vramPosition] = prg.vram[vramPosition] xor mask
+      prg.vram[vramPositionY][vramPositionX] =
+          prg.vram[vramPositionY][vramPositionX] xor bit
   
 chip8Instruction(0xE, prg, ins):
   type KeyboardInstructions = enum
