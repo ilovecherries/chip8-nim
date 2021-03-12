@@ -1,5 +1,5 @@
 when defined(js):
-  import dom
+  import base64
 else:
   import sdl2, os, streams
 import interpreter
@@ -19,7 +19,8 @@ when defined(js):
       90, 88, 67, 86
     ]
     # Contains the data for the test ROM for use in the Javascript backend
-    TestData="Ek7qrKrqzqqqruCgoODAQEDg4CDA4OBgIOCg4CAgYEAgQOCA4ODgICAg4OCg4ODgIOBAoOCg4MCA4OCAwICgQKCgogLatADuogLatBPcaAFpBWoKawFlKmYrohbYtKI+2bSiAjYrogbatGsGohrYtKI+2bSiBkUqogLatGsLoh7YtKI+2bSiBlVgogLatGsQoibYtKI+2bSiBnb/RiqiAtq0axWiLti0oj7ZtKIGlWCiAtq0axqiMti0oj7ZtCJCaBdpG2ogawGiCti0ojbZtKIC2rRrBqIq2LSiCtm0ogaHUEcqogLatGsLoirYtKIO2bSiBmcqh7FHK6IC2rRrEKIq2LSiEtm0ogZmeGcfh2JHGKIC2rRrFaIq2LSiFtm0ogZmeGcfh2NHZ6IC2rRrGqIq2LSiGtm0ogZmjGeMh2RHGKIC2rRoLGkwajRrAaIq2LSiHtm0ogZmjGd4h2VH7KIC2rRrBqIq2LSiItm0ogZm4IZuRsCiAtq0awuiKti0ojbZtKIGZg+GZkYHogLatGsQojrYtKIe2bSj6GAAYTDxVaPp8GWiBkAwogLatGsVojrYtKIW2bSj6GaJ9jPyZaICMAGiBjEDogYyB6IG2rRrGqIO2LSiPtm0EkgT3A=="
+    TestRom="orQj5iK2cAHQETAlEgZx/9ARYBrQEWAlMQASDsRwRHASHMMDYB5hAyJc9RXQFD8BEjzQFHH/0BQjQBIc56EicuihIoTpoSKW4p4SUGYA9hX2BzYAEjzQFHEBEiqixPQeZgBDAWYEQwJmCEMDZgz2HgDu0BRw/yM0PwEA7tAUcAEjNADu0BRwASM0PwEA7tAUcP8jNADu0BRzAUMEYwAiXCM0PwEA7tAUc/9D/2MDIlwjNADugABnBWgGaQRhH2UQYgcA7kDgAABAwEAAAOBAAEBgQABAQGAAIOAAAMBAQAAA4IAAQEDAAADgIABgQEAAgOAAAEDAgADAYAAAQMCAAMBgAACAwEAAAGDAAIDAQAAAYMAAwMAAAMDAAADAwAAAwMAAAEBAQEAA8AAAQEBAQADwAADQFGY1dv82ABM4AO6itIwQPB58ATwefAE8HnwBI15LCiNykcAA7nEBE1BgG2sA0BE/AHsB0BFwATAlE2IA7mAb0BFwATAlE3SOEI3gfv9gG2sA0OE/ABOQ0OETlNDRewFwATAlE4ZLABOmff9+/z0BE4IjwD8BI8B6ASPAgKBtB4DSQAR1/kUCZQQA7qcA8lWoBPoz8mXwKW0ybgDd5X0F8Snd5X0F8ind5acA8mWitADuagBgGQDuNyM="
+    # TestRom="Ek7qrKrqzqqqruCgoODAQEDg4CDA4OBgIOCg4CAgYEAgQOCA4ODgICAg4OCg4ODgIOBAoOCg4MCA4OCAwICgQKCgogLatADuogLatBPcaAFpBWoKawFlKmYrohbYtKI+2bSiAjYrogbatGsGohrYtKI+2bSiBkUqogLatGsLoh7YtKI+2bSiBlVgogLatGsQoibYtKI+2bSiBnb/RiqiAtq0axWiLti0oj7ZtKIGlWCiAtq0axqiMti0oj7ZtCJCaBdpG2ogawGiCti0ojbZtKIC2rRrBqIq2LSiCtm0ogaHUEcqogLatGsLoirYtKIO2bSiBmcqh7FHK6IC2rRrEKIq2LSiEtm0ogZmeGcfh2JHGKIC2rRrFaIq2LSiFtm0ogZmeGcfh2NHZ6IC2rRrGqIq2LSiGtm0ogZmjGeMh2RHGKIC2rRoLGkwajRrAaIq2LSiHtm0ogZmjGd4h2VH7KIC2rRrBqIq2LSiItm0ogZm4IZuRsCiAtq0awuiKti0ojbZtKIGZg+GZkYHogLatGsQojrYtKIe2bSj6GAAYTDxVaPp8GWiBkAwogLatGsVojrYtKIW2bSj6GaJ9jPyZaICMAGiBjEDogYyB6IG2rRrGqIO2LSiPtm0EkgT3A=="
 else:
   const
     KeyboardCodes = [
@@ -29,23 +30,22 @@ else:
       SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_V
     ]
 
-
-proc drawToRenderer(prg: Chip8, renderer: RendererPtr): void =
-  renderer.setDrawColor(0, 0, 0, 255)
-  renderer.clear()
-  renderer.setDrawColor(255, 255, 255, 255)
-  for i in countup(0, DisplayY - 1):
-    for j in countdown(DisplayX - 1, 0):
-      var r = rect(
-        ResolutionMultiplier*(DisplayX - 1 - cint(j)),
-        cint(i*ResolutionMultiplier),
-        cint(1*ResolutionMultiplier),
-        cint(1*ResolutionMultiplier)
-      )
-      if (prg.vram[i][j] and 1) != 0:
-        renderer.fillRect(r)
-  renderer.present()
-
+when not defined(js):
+  proc drawToRenderer(prg: Chip8, renderer: RendererPtr): void =
+    renderer.setDrawColor(0, 0, 0, 255)
+    renderer.clear()
+    renderer.setDrawColor(255, 255, 255, 255)
+    for i in countup(0, DisplayY - 1):
+      for j in countdown(DisplayX - 1, 0):
+        var r = rect(
+          ResolutionMultiplier*(DisplayX - 1 - cint(j)),
+          cint(i*ResolutionMultiplier),
+          cint(1*ResolutionMultiplier),
+          cint(1*ResolutionMultiplier)
+        )
+        if (prg.vram[i][j] and 1) != 0:
+          renderer.fillRect(r)
+    renderer.present()
 
 when isMainModule:
   when defined(js):
@@ -62,6 +62,18 @@ when isMainModule:
       program.cycle()
     proc chip8getvram(): array[DisplayY, array[DisplayX, uint8]] {.exportc.} =
       return program.vram
+    proc chip8frame(): void {.exportc.} =
+      program.dt -= 1
+      if program.dt == 255: program.dt = 60
+    proc chip8keydown(scankey: int): void {.exportc.} =
+      echo scankey
+      let code = KeyboardCodes.find(scankey)
+      if code != -1:
+        program.keyboard[code] = true
+    proc chip8keyup(scankey: int): void {.exportc.} =
+      let code = KeyboardCodes.find(scankey)
+      if code != -1:
+        program.keyboard[code] = false
   else:
     proc main(): void =
       # prepare interpreter

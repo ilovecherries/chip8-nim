@@ -6,7 +6,7 @@ description   = "chip-8 interpreter"
 license       = "MIT"
 srcDir        = "src"
 bin           = @["chip8"]
-
+backend       = "js"
 
 # Dependencies
 
