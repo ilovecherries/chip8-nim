@@ -1,5 +1,8 @@
 import algorithm, sugar, random
 
+type
+  DelayTimer = uint8
+
 const
   DisplayX* = 64
   DisplayY* = 32
@@ -7,8 +10,12 @@ const
   StackSize = 0x16
   VariablesSize = 0x10
   KeyboardSize = 0x10
+  DelayTimerLength = cast[DelayTimer](60)
+  ## Amount of ticks that the delay timer resets to
   InstructionSize = 2 # bytes
+  ## The size of an instruction in bytes.
   DigitSpriteSize = 5
+  ## The amount of bytes in memory that a digit sprite takes.
   DigitSpriteData = [ 
     0xF0, 0x90, 0x90, 0x90, 0xF0, # 0
     0x20, 0x60, 0x20, 0x20, 0x70, # 1
@@ -37,13 +44,18 @@ type
     vars: array[VariablesSize, uint8]
     keyboard*: array[KeyboardSize, bool]
     i: uint16
+    ## A special 16-bit register for storing memory addresses for operations. 
     endPoint*: uint32
-    # delay timer
-    dt*: uint8
-    # sound timer
+    dt*: DelayTimer
+    ## Delay timer that increments at the rate of HZ.
     st: uint8
+    ## Sound timer. As long as `st` is larger than 0, play a noise.
+
+proc tick*(dt: var DelayTimer) =
+  dt = if dt == 0: DelayTimerLength else: dt - 1
 
 proc initializeDigits(prg: Chip8): void =
+  ## Initializes the CHIP8 ROM memory to contain the digits.
   for i in DigitSpriteData.low..<DigitSpriteData.high:
     prg.ram[i] = cast[uint8](DigitSpriteData[i])
   return

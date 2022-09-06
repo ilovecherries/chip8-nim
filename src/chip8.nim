@@ -134,8 +134,7 @@ when isMainModule:
                 program.keyboard[code] = false
             else:
               discard
-        program.dt -= 1
-        if program.dt == 255: program.dt = 60
+        tick program.dt
         program.drawToRenderer(renderer)
         lastTime = sdl2.getTicks()
             
